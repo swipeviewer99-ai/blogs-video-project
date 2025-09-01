@@ -1,16 +1,21 @@
+// src/video/video-processor.js
 const ffmpeg = require('fluent-ffmpeg');
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const logger = require('../utils/logger');
+const ffmpegStatic = require('ffmpeg-static');
+const ffprobeStatic = require('ffprobe-static');
 
-ffmpeg.setFfmpegPath(config.ffmpegPath);
+ffmpeg.setFfmpegPath(ffmpegStatic);
+ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const getMediaDuration = (filePath) => {
   return new Promise((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
       if (err) {
         logger.error(`Error getting duration for ${filePath}`, err);
+        console.log(err);
         return reject(err);
       }
       resolve(metadata.format.duration);
@@ -27,15 +32,16 @@ async function createVideoFromImageAndAudio(imagePath, audioPath, outputPath) {
       .inputOptions(['-loop 1'])
       .addInput(audioPath)
       .outputOptions([
-        '-vf', 'scale=1920:1008',
-        '-c:v libx264',
-        '-preset veryfast',
-        '-c:a aac',
-        '-b:a 192k',
-        '-pix_fmt yuv420p',
-        '-movflags +faststart',
-        '-shortest',
-      ])
+     '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2',
+      '-map 0:v:0',
+      '-map 1:a:0',
+      '-c:v libx264',
+      '-preset veryfast',
+      '-c:a aac',
+      '-b:a 192k',
+      '-pix_fmt yuv420p',
+      '-movflags +faststart',
+      '-t', `${duration}`])
       .output(outputPath)
       .on('end', () => {
         logger.info(`Video saved to ${outputPath}`);
@@ -105,8 +111,8 @@ async function mixBackgroundMusic(videoPath, musicPath, outputPath) {
   });
 }
 
-async function createScrollingImageVideo(imageUrl, audioPath, outputPath) {
-  const localImagePath = 'assets/temp_resume_scroll.png';
+async function createScrollingImageVideo(imageUrl, audioPath, outputPath, downloadImgPath) {
+  const localImagePath = downloadImgPath; 
   logger.info('imageurl', imageUrl);
   await require('./image-generator').downloadImage(imageUrl, localImagePath);
 
@@ -162,11 +168,11 @@ async function convertToTs(inputPath, outputPath) {
         .on('error', reject);
     });
   }
-
+  
   async function concatenateTsFiles(tsFiles, outputPath) {
     const listFile = 'output/ts_list.txt';
     fs.writeFileSync(listFile, tsFiles.map(f => `file '${path.resolve(f)}'`).join('\n'));
-
+  
     return new Promise((resolve, reject) => {
       ffmpeg()
         .input(listFile)
@@ -187,7 +193,7 @@ async function convertToTs(inputPath, outputPath) {
   async function speedUpVideo(inputPath, outputPath, targetDuration = 40) {
     const actualDuration = await getMediaDuration(inputPath);
     const speedFactor = actualDuration / targetDuration;
-
+  
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
         .videoFilters(`setpts=${1 / speedFactor}*PTS`)
@@ -211,38 +217,26 @@ async function convertToTs(inputPath, outputPath) {
   }
 
   function generateSyncedASS(partTexts, partDurations, outputPath, fontSize = 14) {
-    let assContent = `[Script Info]
-  ScriptType: v4.00+
-  PlayResX: 1920
-  PlayResY: 1080
-  Timer: 100.0000
-
-  [V4+ Styles]
-  Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-  Style: Default,Arial,${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1
-
-  [Events]
-  Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-  `;
-
+    let assContent = `[Script Info]\n  ScriptType: v4.00+\n  PlayResX: 1920\n  PlayResY: 1080\n  Timer: 100.0000\n  \n  [V4+ Styles]\n  Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n  Style: Default,Arial,${fontSize},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1\n  \n  [Events]\n  Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n  `;
+  
     let currentTime = 0;
-
+  
     for (let i = 0; i < partTexts.length; i++) {
       const sentences = partTexts[i].match(/[^.!?]+[.!?]+/g)?.map(s => s.trim()) || [partTexts[i]];
       const perLineDuration = (partDurations[i] / sentences.length )* 1.25;
-
+  
       sentences.forEach((line, j) => {
         const start = formatASSTime(currentTime + j * perLineDuration);
         const end = formatASSTime(currentTime + (j + 1) * perLineDuration);
         assContent += `Dialogue: 0,${start},${end},Default,,0,0,0,,${line}\n`;
       });
-
+  
       currentTime += partDurations[i];
     }
-
+  
     fs.writeFileSync(outputPath, assContent, 'utf8');
   }
-
+  
   function formatASSTime(seconds) {
     const h = String(Math.floor(seconds / 3600));
     const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
@@ -250,7 +244,7 @@ async function convertToTs(inputPath, outputPath) {
     const cs = String(Math.floor((seconds % 1) * 100)).padStart(2, '0'); // centiseconds
     return `${h}:${m}:${s}.${cs}`;
   }
-
+  
   async function addSubtitles(videoPath, srtPath, outputPath) {
     return new Promise((resolve, reject) => {
       ffmpeg(videoPath)
@@ -267,9 +261,81 @@ async function convertToTs(inputPath, outputPath) {
     });
   }
 
+// async function overlayAudioOnVideo(baseVideoPath, audioPath, outputPath) {
+//     const audioDuration = await getMediaDuration(audioPath);
+//     return new Promise((resolve, reject) => {
+//       const cmd = ffmpeg()
+//         .addInput(baseVideoPath)
+//         .addInput(audioPath)
+//         .videoFilters('scale=1920:1008')
+//         .outputOptions([
+//           '-map 0:v:0',
+//           '-map 1:a:0',
+//           '-c:v libx264',
+//           '-c:a aac',
+//           '-pix_fmt yuv420p',
+//           '-movflags +faststart',
+//           '-fflags +genpts',
+//           '-avoid_negative_ts make_zero',
+//         ]);
+
+//         if (audioDuration) {
+//             cmd.outputOptions(['-t', `${audioDuration}`]);
+//         }
+
+//       cmd
+//         .save(outputPath)
+//         .on('end', () => {
+//             logger.info(`✅ Video with overlayed audio saved to ${outputPath}`);
+//             resolve(outputPath);
+//         })
+//         .on('error', (err) => {
+//             logger.error(`❌ FFmpeg error for overlayAudioOnVideo:`, err.message);
+//             reject(err);
+//         });
+//     });
+// }
+
+async function overlayAudioOnVideo(baseVideoPath, audioPath, outputPath) {
+  const audioDuration = await getMediaDuration(audioPath);
+  const videoDuration = await getMediaDuration(baseVideoPath);
+
+  // Trim to the shorter of the two
+  const finalDuration = audioDuration;
+
+  return new Promise((resolve, reject) => {
+    const cmd = ffmpeg()
+      .addInput(baseVideoPath)
+      .addInput(audioPath)
+      .videoFilters('scale=1920:1008')
+      .outputOptions([
+        '-map 0:v:0',
+        '-map 1:a:0',
+        '-c:v libx264',
+        '-c:a aac',
+        '-pix_fmt yuv420p',
+        '-movflags +faststart',
+        '-fflags +genpts',
+        '-avoid_negative_ts make_zero',
+        '-t', `${finalDuration}`,   // enforce exact duration
+      ])
+      .save(outputPath)
+      .on('end', () => {
+        logger.info(`✅ Video with overlayed audio saved to ${outputPath}`);
+        resolve(outputPath);
+      })
+      .on('error', (err) => {
+        logger.error(`❌ FFmpeg error for overlayAudioOnVideo:`, err.message);
+        reject(err);
+      });
+  });
+}
+
+
 module.exports = {
   getMediaDuration,
   createVideoFromImageAndAudio,
+  overlayAudioOnVideo,
   concatenateVideos,
   mixBackgroundMusic,
   createScrollingImageVideo,

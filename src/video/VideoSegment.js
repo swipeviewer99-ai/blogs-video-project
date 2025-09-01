@@ -1,10 +1,12 @@
+// src/video/VideoSegment.js
 const path = require('path');
-const { generateAudio } = require('../services/google-tts');
+const { generateAudio } = require('../services/azure-tts');
 const {
   createVideoFromImageAndAudio,
   createScrollingImageVideo,
+  overlayAudioOnVideo,
 } = require('./video-processor');
-const { createImageWithBackground } = require('./image-generator');
+const { createImageWithBackground,downloadImage } = require('./image-generator');
 const { ensureDirectoryExists } = require('../utils/file-helpers');
 const logger = require('../utils/logger');
 
@@ -17,27 +19,52 @@ class VideoSegment {
     this.outputDir = 'output';
   }
 
-  async create() {
+  async create(iteration) {
     logger.info(`Creating video segment ${this.id} of type ${this.type}`);
     ensureDirectoryExists(path.join(this.outputDir, 'temp.txt'));
 
-    const audioPath = path.join(this.outputDir, `audio_${this.id}.mp3`);
+    const audioPath = path.join(this.outputDir, `audio_v${iteration}_${this.id}.mp3`);
     await generateAudio(this.text, audioPath);
 
-    const videoPath = path.join(this.outputDir, `video_${this.id}.mp4`);
+    const videoPath = path.join(this.outputDir, `video_v${iteration}_${this.id}.mp4`);
 
     switch (this.type) {
       case 'static-image': {
-        const imagePath = path.join(this.outputDir, `image_${this.id}.png`);
-        await createImageWithBackground(this.text, imagePath);
+       let imagePath ='';
+        // let imagePath = path.join(this.outputDir, `image_${this.id}.png`);
+        if (!this.options.imageUrl ) {
+          throw new Error('imageUrl is required for static-image segment');
+         
+        }
+        else {
+          imagePath = this.options.imageUrl;
+        }
+        //const downloadedImgPath = `assets/${imagePath}.png`
+        try{
         return createVideoFromImageAndAudio(imagePath, audioPath, videoPath);
+        }
+        catch(err)
+        {
+          console.log(err);
+        }
       }
       case 'scrolling-image': {
-        if (!this.options.imageUrl) {
+        if (!this.options.imageUrl || !this.options.downloadPath) {
           throw new Error('imageUrl is required for scrolling-image segment');
         }
         return createScrollingImageVideo(
           this.options.imageUrl,
+          audioPath,
+          videoPath,
+          this.options.downloadPath 
+        );
+      }
+      case 'video-overlay': {
+        if (!this.options.baseVideoPath) {
+          throw new Error('baseVideoPath is required for video-overlay segment');
+        }
+        return overlayAudioOnVideo(
+          this.options.baseVideoPath,
           audioPath,
           videoPath
         );

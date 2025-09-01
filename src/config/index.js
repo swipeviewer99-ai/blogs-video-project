@@ -20,6 +20,8 @@ try {
 const config = {
   googleApplicationCredentials: credentials,
   ffmpegPath: process.env.FFMPEG_PATH,
+  azureTtsKey: process.env.AZURE_TTS_KEY,
+  azureTtsRegion: process.env.AZURE_TTS_REGION,
 };
 
 module.exports = config;
