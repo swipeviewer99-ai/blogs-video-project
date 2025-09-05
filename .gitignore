@@ -3,3 +3,4 @@ node_modules/
 output
 gca-credentials
 gca-auth-key
+assets/*.xlsx
