@@ -56,7 +56,7 @@ async function createVideoFromImageAndAudio(imagePath, audioPath, outputPath) {
 }
 
 async function concatenateVideos(videoPaths, outputPath) {
-  const listFile = 'output/files.txt';
+  const listFile = `output/files_${Math.random().toString(36).substring(7)}.txt`;
   fs.writeFileSync(listFile, videoPaths.map(p => `file '${path.resolve(p)}'`).join('\n'));
 
   return new Promise((resolve, reject) => {
@@ -74,6 +74,7 @@ async function concatenateVideos(videoPaths, outputPath) {
       .output(outputPath)
       .on('end', () => {
         logger.info('✅ Merged video created');
+        fs.unlinkSync(listFile); // Clean up the temporary file
         resolve(outputPath);
       })
       .on('error', (err) => {
@@ -170,7 +171,7 @@ async function convertToTs(inputPath, outputPath) {
   }
   
   async function concatenateTsFiles(tsFiles, outputPath) {
-    const listFile = 'output/ts_list.txt';
+    const listFile = `output/ts_list_${Math.random().toString(36).substring(7)}.txt`;
     fs.writeFileSync(listFile, tsFiles.map(f => `file '${path.resolve(f)}'`).join('\n'));
   
     return new Promise((resolve, reject) => {
@@ -184,6 +185,7 @@ async function convertToTs(inputPath, outputPath) {
         .save(outputPath)
         .on('end', () => {
           logger.info('✅ TS-based merged video created');
+          fs.unlinkSync(listFile); // Clean up the temporary file
           resolve(outputPath);
         })
         .on('error', reject);

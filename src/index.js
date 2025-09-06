@@ -11,6 +11,7 @@ process.env.AZURE_TTS_KEY = "GHaTp7A7jY1pDknNE6KxvAned2X1yvehOBY3KlwFCsAGjDLeARP
 process.env.AZURE_TTS_REGION = "eastus";
 const fs = require('fs');
 const path = require('path');
+const pLimit = require('p-limit');
 const logger = require('./utils/logger');
 const VideoSegment = require('./video/VideoSegment');
 const {
@@ -32,6 +33,8 @@ async function main() {
   try {
     try {
       const rows = await getResumeData();
+      const limit = pLimit(2); // Limit concurrency to 2
+
       for (let row of rows) {
         iteration++;
         let resumeContent = JSON.parse(row.ResumeContent);
@@ -67,37 +70,12 @@ async function main() {
           new VideoSegment(texts[4], 'static-image', { imageUrl: `assets/part4_v${RandomSegmentVersion}.png` }),
         ];
 
-        const firstSegment = segments[0];
-        const firstResult = await firstSegment.create(iteration);
-        // Run first 4 in parallel
-        const firstBatch = segments.slice(1, 4);
-        let firstResults = [];
-        // const firstResults = await Promise.each(firstBatch.map(s => s.create(iteration)));
-        try{
-        for (const s of firstBatch) {
-          //await s.create(iteration);
-          const result = await s.create(iteration);
-          firstResults.push(result);
-        }
-      }
-      catch(err)
-      {
-        console.log(`err while creating segments ${err}`);
-        throw err;
-      }
-        // Run last one sequentially (after first batch completes)
-        const lastSegment = segments[4]; // temporary for debugging issue
-        const lastResult = await lastSegment.create(iteration);
+        const creationPromises = segments.map(s => limit(() => s.create(iteration)));
+        const partVideos = await Promise.all(creationPromises);
 
-        // Merge results
-        const partVideos = [firstResult, ...firstResults, lastResult];
-        // const partVideos = await Promise.all(segments.map(s => s.create()));
-
-        // const concatenatedPath = path.join(outputDir, 'merged.mp4');
-        // await concatenateVideos(partVideos, concatenatedPath);
-        // Convert each part to TS first
+        // Convert each part to TS first, with concurrency limit
         const tsFiles = await Promise.all(
-          partVideos.map((p, i) => convertToTs(p, path.join(outputDir, `part_v${iteration}_${i}.ts`)))
+          partVideos.map((p, i) => limit(() => convertToTs(p, path.join(outputDir, `part_v${iteration}_${i}.ts`))))
         );
 
         const meta = {
