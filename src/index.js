@@ -33,7 +33,7 @@ async function main() {
     try {
       const rows = await getResumeData();
       const pLimit = (await import('p-limit')).default;
-      const limit = pLimit(2); // Limit concurrency to 2
+      const limit = pLimit(1); // Limit concurrency to 1 for stability
 
       for (let row of rows) {
         iteration++;
