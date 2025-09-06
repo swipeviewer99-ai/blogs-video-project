@@ -113,17 +113,25 @@ async function mixBackgroundMusic(videoPath, musicPath, outputPath) {
 }
 
 async function createScrollingImageVideo(imageUrl, audioPath, outputPath, downloadImgPath) {
+  logger.info(`[scrolling-image] Starting creation for ${outputPath}`);
   const localImagePath = downloadImgPath; 
-  logger.info('imageurl', imageUrl);
-  await require('./image-generator').downloadImage(imageUrl, localImagePath);
+
+  try {
+    logger.info(`[scrolling-image] Downloading image from ${imageUrl} to ${localImagePath}`);
+    await require('./image-generator').downloadImage(imageUrl, localImagePath);
+    logger.info(`[scrolling-image] Image downloaded successfully.`);
+  } catch (error) {
+    logger.error(`[scrolling-image] Failed to download image: ${error.message}`);
+    throw error; // Re-throw the error to stop the process
+  }
 
   const audioDuration = await getMediaDuration(audioPath);
-  logger.info(`Audio duration for ${audioPath}: ${audioDuration} seconds`);
+  logger.info(`[scrolling-image] Audio duration for ${audioPath}: ${audioDuration} seconds`);
 
   const filter = `[0:v]scale=1920:-1,format=rgba,loop=999:size=1:start=0,setpts=N/FRAME_RATE/TB,crop=1920:1008:0:'(ih-1008)*t/${audioDuration}'[v];[1:a]anull[a]`;
 
   return new Promise((resolve, reject) => {
-    ffmpeg()
+    const command = ffmpeg()
       .addInput(localImagePath)
       .inputOptions(['-loop 1'])
       .addInput(audioPath)
@@ -140,6 +148,9 @@ async function createScrollingImageVideo(imageUrl, audioPath, outputPath, downlo
         '-avoid_negative_ts', 'make_zero',
       ])
       .output(outputPath)
+      .on('start', (commandLine) => {
+        logger.info(`[scrolling-image] Spawning ffmpeg with command: ${commandLine}`);
+      })
       .on('end', () => {
         logger.info(`🎞️ Scrolling image video saved to ${outputPath}`);
         resolve(outputPath);
@@ -147,8 +158,9 @@ async function createScrollingImageVideo(imageUrl, audioPath, outputPath, downlo
       .on('error', (err) => {
         logger.error('❌ FFmpeg error:', err.message);
         reject(err);
-      })
-      .run();
+      });
+
+    command.run();
   });
 }
 
