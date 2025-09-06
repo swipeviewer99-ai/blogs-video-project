@@ -296,6 +296,7 @@ async function convertToTs(inputPath, outputPath) {
 //     });
 // }
 
+
 async function overlayAudioOnVideo(baseVideoPath, audioPath, outputPath) {
   const audioDuration = await getMediaDuration(audioPath);
   const videoDuration = await getMediaDuration(baseVideoPath);
@@ -304,10 +305,10 @@ async function overlayAudioOnVideo(baseVideoPath, audioPath, outputPath) {
   const finalDuration = audioDuration;
 
   return new Promise((resolve, reject) => {
-    const cmd = ffmpeg()
+    ffmpeg()
       .addInput(baseVideoPath)
       .addInput(audioPath)
-      .videoFilters('scale=1920:1008')
+      .videoFilters('scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2')
       .outputOptions([
         '-map 0:v:0',
         '-map 1:a:0',
@@ -317,9 +318,9 @@ async function overlayAudioOnVideo(baseVideoPath, audioPath, outputPath) {
         '-movflags +faststart',
         '-fflags +genpts',
         '-avoid_negative_ts make_zero',
-        '-t', `${finalDuration}`,   // enforce exact duration
+        `-t ${finalDuration}`,
+        '-shortest'
       ])
-      .save(outputPath)
       .on('end', () => {
         logger.info(`✅ Video with overlayed audio saved to ${outputPath}`);
         resolve(outputPath);
@@ -327,9 +328,11 @@ async function overlayAudioOnVideo(baseVideoPath, audioPath, outputPath) {
       .on('error', (err) => {
         logger.error(`❌ FFmpeg error for overlayAudioOnVideo:`, err.message);
         reject(err);
-      });
+      })
+      .save(outputPath); // start the process last
   });
 }
+
 
 
 module.exports = {

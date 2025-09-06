@@ -20,6 +20,7 @@ class VideoSegment {
   }
 
   async create(iteration) {
+    try{
     logger.info(`Creating video segment ${this.id} of type ${this.type}`);
     ensureDirectoryExists(path.join(this.outputDir, 'temp.txt'));
 
@@ -41,7 +42,7 @@ class VideoSegment {
         }
         //const downloadedImgPath = `assets/${imagePath}.png`
         try{
-        return createVideoFromImageAndAudio(imagePath, audioPath, videoPath);
+        return await createVideoFromImageAndAudio(imagePath, audioPath, videoPath);
         }
         catch(err)
         {
@@ -52,7 +53,7 @@ class VideoSegment {
         if (!this.options.imageUrl || !this.options.downloadPath) {
           throw new Error('imageUrl is required for scrolling-image segment');
         }
-        return createScrollingImageVideo(
+        return await createScrollingImageVideo(
           this.options.imageUrl,
           audioPath,
           videoPath,
@@ -60,19 +61,31 @@ class VideoSegment {
         );
       }
       case 'video-overlay': {
+        try{ 
         if (!this.options.baseVideoPath) {
           throw new Error('baseVideoPath is required for video-overlay segment');
         }
-        return overlayAudioOnVideo(
+        return await overlayAudioOnVideo(
           this.options.baseVideoPath,
           audioPath,
           videoPath
         );
       }
+      catch(err)
+      {
+        console.log(err);
+        throw err;
+      }
+      }
       default:
         throw new Error(`Unknown video segment type: ${this.type}`);
     }
+  } catch(ex)
+  {
+    console.log("ex in VideoSegment ", ex);
+    throw ex;
   }
+}
 }
 
 module.exports = VideoSegment;

@@ -7,7 +7,7 @@ async function getResumeData() {
   try {
     await sql.connect(connectionString);
 
-    const result = await sql.query  `SELECT  B.Title, A.ResumeContent, A.PreviewImageUrl, A.JobTitleId FROM [EF].[ResumeSamplesFinal] A inner join [EF].[JobTitles] B ON A.JobTitleId = B.Id where  A.JobTitleId > 35`;
+    const result = await sql.query  `SELECT  top 10 B.Title, A.ResumeContent, A.PreviewImageUrl, A.JobTitleId FROM [EF].[ResumeSamplesFinal] A inner join [EF].[JobTitles] B ON A.JobTitleId = B.Id `;// where  A.JobTitleId = 10 
     
     return result.recordset; 
   } catch (err) {

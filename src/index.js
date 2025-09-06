@@ -1,5 +1,14 @@
-// src/index.js
-require('dotenv').config();
+process.on("uncaughtException", (err) => {
+  console.error("❌ Uncaught Exception:", err);
+});
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("❌ Unhandled Rejection:", reason);
+});
+
+process.env.GOOGLE_APPLICATION_CREDENTIALS = "./gca-auth-key.json";
+process.env.FFMPEG_PATH = "=C:\\Users\\deept\\Downloads\\ffmpeg-7.1.1-full_build\\ffmpeg-7.1.1-full_build\\bin\\ffmpeg.exe";
+process.env.AZURE_TTS_KEY = "GHaTp7A7jY1pDknNE6KxvAned2X1yvehOBY3KlwFCsAGjDLeARPSJQQJ99BHACYeBjFXJ3w3AAAYACOGqdCx";
+process.env.AZURE_TTS_REGION = "eastus";
 const fs = require('fs');
 const path = require('path');
 const logger = require('./utils/logger');
@@ -53,7 +62,7 @@ async function main() {
           new VideoSegment(texts[1], 'scrolling-image', {
             imageUrl: `https://wpimages.resumegemini.com/resumesamples/${blogData.ImageName}.png`, downloadPath: `assets/${blogData.Title}.png`
           }),
-          new VideoSegment(texts[2], 'video-overlay', { baseVideoPath: 'assets/part2.mp4' }),
+         new VideoSegment(texts[2], 'video-overlay', { baseVideoPath: 'assets/part2.mp4' }), // some issue with this one.. 
           new VideoSegment(texts[3], 'static-image', { imageUrl: `assets/${blogData.Title}.png` }),
           new VideoSegment(texts[4], 'static-image', { imageUrl: `assets/part4_v${RandomSegmentVersion}.png` }),
         ];
@@ -64,13 +73,20 @@ async function main() {
         const firstBatch = segments.slice(1, 4);
         let firstResults = [];
         // const firstResults = await Promise.each(firstBatch.map(s => s.create(iteration)));
+        try{
         for (const s of firstBatch) {
           //await s.create(iteration);
           const result = await s.create(iteration);
           firstResults.push(result);
         }
+      }
+      catch(err)
+      {
+        console.log(`err while creating segments ${err}`);
+        throw err;
+      }
         // Run last one sequentially (after first batch completes)
-        const lastSegment = segments[4];
+        const lastSegment = segments[4]; // temporary for debugging issue
         const lastResult = await lastSegment.create(iteration);
 
         // Merge results
@@ -115,7 +131,8 @@ async function main() {
     }
   } catch (error) {
     logger.error({ err: error }, `Video generation failed for ${iteration}`);
-    process.exit(1);
+    throw error;
+   // process.exit(1);
   }
 }
 
