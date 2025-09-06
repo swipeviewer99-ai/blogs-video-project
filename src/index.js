@@ -11,7 +11,6 @@ process.env.AZURE_TTS_KEY = "GHaTp7A7jY1pDknNE6KxvAned2X1yvehOBY3KlwFCsAGjDLeARP
 process.env.AZURE_TTS_REGION = "eastus";
 const fs = require('fs');
 const path = require('path');
-const pLimit = require('p-limit');
 const logger = require('./utils/logger');
 const VideoSegment = require('./video/VideoSegment');
 const {
@@ -33,6 +32,7 @@ async function main() {
   try {
     try {
       const rows = await getResumeData();
+      const pLimit = (await import('p-limit')).default;
       const limit = pLimit(2); // Limit concurrency to 2
 
       for (let row of rows) {
