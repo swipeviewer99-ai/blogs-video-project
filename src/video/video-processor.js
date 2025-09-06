@@ -128,6 +128,7 @@ async function createScrollingImageVideo(imageUrl, audioPath, outputPath, downlo
       .inputOptions(['-loop 1'])
       .addInput(audioPath)
       .complexFilter(filter)
+      .withTimeout(60) // Add a 60-second timeout
       .outputOptions([
         '-map', '[v]',
         '-map', '[a]',
@@ -140,12 +141,15 @@ async function createScrollingImageVideo(imageUrl, audioPath, outputPath, downlo
         '-avoid_negative_ts', 'make_zero',
       ])
       .output(outputPath)
+      .on('progress', (progress) => {
+        logger.info(`[scrolling-image] Processing: ${progress.percent}% done`);
+      })
       .on('end', () => {
         logger.info(`🎞️ Scrolling image video saved to ${outputPath}`);
         resolve(outputPath);
       })
       .on('error', (err) => {
-        logger.error('❌ FFmpeg error:', err.message);
+        logger.error('❌ FFmpeg error in createScrollingImageVideo:', err.message);
         reject(err);
       })
       .run();
