@@ -5,10 +5,12 @@ process.on("unhandledRejection", (reason, promise) => {
   console.error("❌ Unhandled Rejection:", reason);
 });
 
-process.env.GOOGLE_APPLICATION_CREDENTIALS = "./gca-auth-key.json";
-process.env.FFMPEG_PATH = "=C:\\Users\\deept\\Downloads\\ffmpeg-7.1.1-full_build\\ffmpeg-7.1.1-full_build\\bin\\ffmpeg.exe";
-process.env.AZURE_TTS_KEY = "GHaTp7A7jY1pDknNE6KxvAned2X1yvehOBY3KlwFCsAGjDLeARPSJQQJ99BHACYeBjFXJ3w3AAAYACOGqdCx";
-process.env.AZURE_TTS_REGION = "eastus";
+// process.env.GOOGLE_APPLICATION_CREDENTIALS = "./gca-auth-key.json";
+// process.env.FFMPEG_PATH = "=C:\\Users\\deept\\Downloads\\ffmpeg-7.1.1-full_build\\ffmpeg-7.1.1-full_build\\bin\\ffmpeg.exe";
+// process.env.AZURE_TTS_KEY = "GHaTp7A7jY1pDknNE6KxvAned2X1yvehOBY3KlwFCsAGjDLeARPSJQQJ99BHACYeBjFXJ3w3AAAYACOGqdCx";
+// process.env.AZURE_TTS_REGION = "eastus";
+require("dotenv").config();
+
 const fs = require('fs');
 const path = require('path');
 const logger = require('./utils/logger');
@@ -28,18 +30,17 @@ const { getResumeData } = require('./utils/db-connector');
 const { ensureDirectoryExists } = require('./utils/file-helpers');
 const { uploadVideo } = require('./video/upload-video');
 let iteration = 0;
+
 async function main() {
   try {
     try {
       const rows = await getResumeData();
-      const pLimit = (await import('p-limit')).default;
-      const limit = pLimit(1); // Limit concurrency to 1 for stability
 
       for (let row of rows) {
         iteration++;
         let resumeContent = JSON.parse(row.ResumeContent);
         resumeContent['Title'] = row.Title;
-         resumeContent['TitleId'] = row.JobTitleId;
+        resumeContent['TitleId'] = row.JobTitleId;
         console.log(`Title: ${row.Title}, ResumeContent: ${row.ResumeContent}, PreviewImageUrl: ${row.PreviewImageUrl}`);
 
         logger.info(`Starting video generation process for the role of ${row.Title}.........`);
@@ -47,7 +48,7 @@ async function main() {
         const outputDir = 'output';
         ensureDirectoryExists(path.join(outputDir, 'temp.txt'));
 
-        const blogData = resumeContent; //JSON.parse(fs.readFileSync('assets/resume1.json', 'utf-8'));
+        const blogData = resumeContent;
 
         const cmnStr0 = `Hello Friends, Ever spent hours tweaking your resume for a ${blogData.Title} role and still felt unsure? Here's the breakthrough you need.`;
         const cmnStr1 = `This is what a winning ${blogData.Title} resume looks like. — clean, professional, and built to impress. Want to create yours without wasting hours? Let’s build it right away.`;
@@ -63,44 +64,81 @@ async function main() {
         const segments = [
           new VideoSegment(texts[0], 'video-overlay', { baseVideoPath: `assets/part0_v${RandomSegmentVersion}.mp4` }),
           new VideoSegment(texts[1], 'scrolling-image', {
-            imageUrl: `https://wpimages.resumegemini.com/resumesamples/${blogData.ImageName}.png`, downloadPath: `assets/${blogData.Title}.png`
+            imageUrl: `https://wpimages.resumegemini.com/resumesamples/${blogData.ImageName}.png`,
+            downloadPath: `assets/${blogData.Title}.png`
           }),
-         new VideoSegment(texts[2], 'video-overlay', { baseVideoPath: 'assets/part2.mp4' }), // some issue with this one.. 
+          new VideoSegment(texts[2], 'video-overlay', { baseVideoPath: 'assets/part2.mp4' }),
           new VideoSegment(texts[3], 'static-image', { imageUrl: `assets/${blogData.Title}.png` }),
           new VideoSegment(texts[4], 'static-image', { imageUrl: `assets/part4_v${RandomSegmentVersion}.png` }),
         ];
 
-        const creationPromises = segments.map(s => limit(() => s.create(iteration)));
-        const partVideos = await Promise.all(creationPromises);
-
-        // Convert each part to TS first, with concurrency limit
-        const tsFiles = await Promise.all(
-          partVideos.map((p, i) => limit(() => convertToTs(p, path.join(outputDir, `part_v${iteration}_${i}.ts`))))
-        );
-
-        const meta = {
-          Id: blogData.TitleId,
-          Title: blogData.Title, Skills: blogData.Skills, PreviewImageUrl: blogData.ImageName
+        // Run segment creation sequentially with timeout + logging
+        const partVideos = [];
+        for (const s of segments) {
+          console.log(`➡️ Starting segment: ${s.type}`);
+          try {
+            const video = await Promise.race([
+              s.create(iteration),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error(`⏳ Timeout in segment ${s.type}`)), 60_000)
+              )
+            ]);
+            console.log(`✅ Finished segment: ${s.type}`);
+            partVideos.push(video);
+          } catch (err) {
+            console.error(`❌ Error in segment ${s.type}:`, err);
+            throw err; // stop process
+          }
         }
-        // Merge TS files losslessly
-        const concatenatedPath = path.join(outputDir, 'merged.mp4');
-        await concatenateTsFiles(tsFiles, concatenatedPath);
 
-        const jobTitle = blogData.Title.replace(/\s+/g, "_");
-        const finalVideoPath = path.join(outputDir, `${jobTitle}.mp4`);
+        // Convert each part to TS sequentially
+      const tsFiles = [];
 
-        await mixBackgroundMusic(concatenatedPath, 'assets/music.mp3', finalVideoPath);
-        await uploadVideo("seo-videos", finalVideoPath, meta).catch(console.error);
-        // const spedUpPath = path.join(outputDir, 'final_video_30sec.mp4');
-        // wait speedUpVideo(finalVideoPath, spedUpPath);
+    // Convert each part to TS sequentially
+    for (let i = 0; i < partVideos.length; i++) {
+      console.log(`➡️ Converting part ${i + 1} to TS...`);
+      const tsFile = await convertToTs(
+        partVideos[i],
+        path.join(outputDir, `part_v${iteration}_${i + 1}.ts`)
+      );
+      console.log(`✅ Converted part ${i + 1} to TS`);
+      tsFiles.push(tsFile);
+    }
 
+    const meta = {
+      Id: blogData.TitleId,
+      Title: blogData.Title,
+      Skills: blogData.Skills,
+      PreviewImageUrl: blogData.ImageName
+    };
 
-        const partDurations = await Promise.all(partVideos.map(p => getMediaDuration(p)));
-        const assPath = path.join(outputDir, 'captions.ass');
-        generateSyncedASS(texts, partDurations, assPath, 30);
+    // Merge TS files losslessly
+    console.log("➡️ Concatenating TS files...");
+    const concatenatedPath = path.join(outputDir, "merged.mp4");
+    await concatenateTsFiles(tsFiles, concatenatedPath);
+    console.log("✅ Concatenated TS files");
 
-        // const subtitledPath = path.join(outputDir, 'final_video_with_captions.mp4');
-        // await addSubtitles(spedUpPath, assPath, subtitledPath);
+    // Prepare final output filename
+    const jobTitle = blogData.Title.replace(/\s+/g, "_");
+    const finalVideoPath = path.join(outputDir, `${jobTitle}.mp4`);
+
+    // Mix background music
+    console.log("➡️ Mixing background music...");
+    await mixBackgroundMusic(concatenatedPath, "assets/music.mp3", finalVideoPath);
+    console.log("✅ Background music mixed");
+
+    // Upload
+    console.log("➡️ Uploading final video...");
+    await uploadVideo("seo-videos", finalVideoPath, meta);
+    console.log("✅ Upload complete");
+
+    // Generate captions
+    const partDurations = await Promise.all(partVideos.map(p => getMediaDuration(p)));
+    const assPath = path.join(outputDir, "captions.ass");
+    generateSyncedASS(texts, partDurations, assPath, 30);
+
+    console.log(`🎬 Video generation complete! Final video at: ${finalVideoPath}`);
+    //return finalVideoPath;
 
         // logger.info(`Video generation complete! Final video at: ${subtitledPath}`);
       }
@@ -110,9 +148,7 @@ async function main() {
   } catch (error) {
     logger.error({ err: error }, `Video generation failed for ${iteration}`);
     throw error;
-   // process.exit(1);
   }
 }
-
 
 module.exports = main;

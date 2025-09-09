@@ -6,7 +6,6 @@ const {
   createScrollingImageVideo,
   overlayAudioOnVideo,
 } = require('./video-processor');
-const { createImageWithBackground,downloadImage } = require('./image-generator');
 const { ensureDirectoryExists } = require('../utils/file-helpers');
 const logger = require('../utils/logger');
 
@@ -20,72 +19,61 @@ class VideoSegment {
   }
 
   async create(iteration) {
-    try{
-    logger.info(`Creating video segment ${this.id} of type ${this.type}`);
-    ensureDirectoryExists(path.join(this.outputDir, 'temp.txt'));
+    try {
+      logger.info(`🎬 Creating video segment ${this.id} of type ${this.type}`);
+      ensureDirectoryExists(path.join(this.outputDir, 'temp.txt'));
 
-    const audioPath = path.join(this.outputDir, `audio_v${iteration}_${this.id}.mp3`);
-    await generateAudio(this.text, audioPath);
+      const audioPath = path.join(this.outputDir, `audio_v${iteration}_${this.id}.mp3`);
+      logger.info(`🔊 Generating audio for segment ${this.id}...`);
+      await generateAudio(this.text, audioPath);
+      logger.info(`✅ Audio generated: ${audioPath}`);
 
-    const videoPath = path.join(this.outputDir, `video_v${iteration}_${this.id}.mp4`);
+      const videoPath = path.join(this.outputDir, `video_v${iteration}_${this.id}.mp4`);
 
-    switch (this.type) {
-      case 'static-image': {
-       let imagePath ='';
-        // let imagePath = path.join(this.outputDir, `image_${this.id}.png`);
-        if (!this.options.imageUrl ) {
-          throw new Error('imageUrl is required for static-image segment');
-         
+      switch (this.type) {
+        case 'static-image': {
+          if (!this.options.imageUrl) {
+            throw new Error('imageUrl is required for static-image segment');
+          }
+          logger.info(`🖼️ Creating static image video from ${this.options.imageUrl}`);
+          const result = await createVideoFromImageAndAudio(this.options.imageUrl, audioPath, videoPath);
+          logger.info(`✅ Static image segment complete: ${videoPath}`);
+          return result;
         }
-        else {
-          imagePath = this.options.imageUrl;
+
+        case 'scrolling-image': {
+          if (!this.options.imageUrl || !this.options.downloadPath) {
+            throw new Error('imageUrl and downloadPath are required for scrolling-image segment');
+          }
+          logger.info(`⬇️ Downloading image for scrolling effect: ${this.options.imageUrl}`);
+          const result = await createScrollingImageVideo(
+            this.options.imageUrl,
+            audioPath,
+            videoPath,
+            this.options.downloadPath
+          );
+          logger.info(`✅ Scrolling image segment complete: ${videoPath}`);
+          return result;
         }
-        //const downloadedImgPath = `assets/${imagePath}.png`
-        try{
-        return await createVideoFromImageAndAudio(imagePath, audioPath, videoPath);
+
+        case 'video-overlay': {
+          if (!this.options.baseVideoPath) {
+            throw new Error('baseVideoPath is required for video-overlay segment');
+          }
+          logger.info(`🎥 Overlaying audio on base video: ${this.options.baseVideoPath}`);
+          const result = await overlayAudioOnVideo(this.options.baseVideoPath, audioPath, videoPath);
+          logger.info(`✅ Video overlay segment complete: ${videoPath}`);
+          return result;
         }
-        catch(err)
-        {
-          console.log(err);
-        }
+
+        default:
+          throw new Error(`Unknown video segment type: ${this.type}`);
       }
-      case 'scrolling-image': {
-        if (!this.options.imageUrl || !this.options.downloadPath) {
-          throw new Error('imageUrl is required for scrolling-image segment');
-        }
-        return await createScrollingImageVideo(
-          this.options.imageUrl,
-          audioPath,
-          videoPath,
-          this.options.downloadPath 
-        );
-      }
-      case 'video-overlay': {
-        try{ 
-        if (!this.options.baseVideoPath) {
-          throw new Error('baseVideoPath is required for video-overlay segment');
-        }
-        return await overlayAudioOnVideo(
-          this.options.baseVideoPath,
-          audioPath,
-          videoPath
-        );
-      }
-      catch(err)
-      {
-        console.log(err);
-        throw err;
-      }
-      }
-      default:
-        throw new Error(`Unknown video segment type: ${this.type}`);
+    } catch (ex) {
+      logger.error(`❌ Error in VideoSegment.create [${this.type}]:`, ex);
+      throw ex;
     }
-  } catch(ex)
-  {
-    console.log("ex in VideoSegment ", ex);
-    throw ex;
   }
-}
 }
 
 module.exports = VideoSegment;

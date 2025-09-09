@@ -7,7 +7,11 @@ const logger = require('../utils/logger');
 const ffmpegStatic = require('ffmpeg-static');
 const ffprobeStatic = require('ffprobe-static');
 
-ffmpeg.setFfmpegPath(ffmpegStatic);
+ffmpeg.setFfmpegPath(config.ffmpegPath);
+
+//ffmpeg.setFfmpegPath(ffmpegPath);
+
+// ffmpeg.setFfmpegPath(ffmpegStatic);
 ffmpeg.setFfprobePath(ffprobeStatic.path);
 
 const getMediaDuration = (filePath) => {
@@ -153,6 +157,7 @@ async function createScrollingImageVideo(imageUrl, audioPath, outputPath, downlo
 }
 
 async function convertToTs(inputPath, outputPath) {
+  
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
         .outputOptions([
@@ -299,41 +304,149 @@ async function convertToTs(inputPath, outputPath) {
 // }
 
 
+// async function overlayAudioOnVideo(baseVideoPath, audioPath, outputPath) {
+//   const audioDuration = await getMediaDuration(audioPath);
+//   const videoDuration = await getMediaDuration(baseVideoPath);
+
+//   // Trim to the shorter of the two
+//   const finalDuration = audioDuration;
+//   console.log(audioDuration);
+
+//   return new Promise((resolve, reject) => {
+//     ffmpeg()
+//       .addInput(baseVideoPath)
+//       .addInput(audioPath)
+//       .videoFilters('scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2')
+//       .outputOptions([
+//          '-map 0:v:0',        // take video from first input
+//         '-map 1:a:0?',       // take audio from second input (ignore if missing with ?)
+//         '-c:v libx264',
+//         '-c:a aac',
+//         '-pix_fmt yuv420p',
+//         '-movflags +faststart',
+//         `-t ${finalDuration}`,
+//         '-shortest'
+//       ]) 
+//       .on('end', () => {
+//         logger.info(`✅ Video with overlayed audio saved to ${outputPath}`);
+//         resolve(outputPath);
+//       })
+//       .on('error', (err) => {
+//         logger.error(`❌ FFmpeg error for overlayAudioOnVideo:`, err.message);
+//         reject(err);
+//       })
+//       .save(outputPath); // start the process last
+//   });
+// }
+
+const normalizePath = (p) => path.resolve(p).replace(/\\/g, '/');
+
+// async function overlayAudioOnVideo(baseVideoPath, audioPath, outputPath) {
+//   const audioDuration = await getMediaDuration(audioPath);
+//   const videoInput = normalizePath(baseVideoPath);
+//   const audioInput = normalizePath(audioPath);
+//   const finalOutput = normalizePath(outputPath);
+
+  
+//     return new Promise((resolve, reject) => {
+//       const cmd = ffmpeg()
+//         .input(videoInput) // video
+//       .input(audioInput) 
+//         .videoFilters('scale=1920:1008')
+//         .outputOptions([
+//          '-map 0:v:0',        // take video from first input
+//         '-map 1:a:0?',       // take audio from second input (ignore if missing with ?)
+//         '-c:v libx264',
+//         '-c:a aac',
+//         '-pix_fmt yuv420p',
+//         '-movflags +faststart',
+//         `-t ${audioDuration}`,
+//         '-shortest'
+//         ]);
+//       cmd
+//         .save(finalOutput)
+//         .on('end', () => {
+//             logger.info(`✅ Video with overlayed audio saved to ${finalOutput}`);
+//             resolve(finalOutput);
+//         })
+//         .on('error', (err) => {
+//             logger.error(`❌ FFmpeg error for overlayAudioOnVideo:`, err.message);
+//             reject(err);
+//         });
+//     });
+   
+   
+//   //   ffmpeg()
+//   //     .input(videoInput) // video
+//   //     .input(audioInput)     // replacement audio
+//   //     .outputOptions([
+//   //       '-map 0:v:0',        // take video from first input
+//   //       '-map 1:a:0?',       // take audio from second input (ignore if missing with ?)
+//   //       '-c:v libx264',
+//   //       '-c:a aac',
+//   //       '-pix_fmt yuv420p',
+//   //       '-movflags +faststart',
+//   //       `-t ${audioDuration}`,
+//   //       '-shortest'
+//   //     ])
+//   //     .on('start', cmd => {
+//   //       console.log('🎯 FFmpeg command:', cmd);   // <---- force log to console
+//   //     })
+//   //     .on('end', () => {
+//   //       console.log(`✅ Video with replaced audio saved to ${outputPath}`);
+//   //       resolve(finalOutput);
+//   //     })
+//   //     .on('error', err => {
+//   //       console.error('❌ FFmpeg error:', err.message);
+//   //       reject(err);
+//   //     })
+//   //     .save(finalOutput);
+//   // });
+// }
 async function overlayAudioOnVideo(baseVideoPath, audioPath, outputPath) {
   const audioDuration = await getMediaDuration(audioPath);
-  const videoDuration = await getMediaDuration(baseVideoPath);
-
-  // Trim to the shorter of the two
-  const finalDuration = audioDuration;
+  const videoInput = normalizePath(baseVideoPath);
+  const audioInput = normalizePath(audioPath);
+  const finalOutput = normalizePath(outputPath);
 
   return new Promise((resolve, reject) => {
-    ffmpeg()
-      .addInput(baseVideoPath)
-      .addInput(audioPath)
-      .videoFilters('scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2')
+    const cmd = ffmpeg()
+      .input(videoInput) // video input
+      .input(audioInput) // audio input
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .videoFilters('scale=1920:1008')
       .outputOptions([
         '-map 0:v:0',
-        '-map 1:a:0',
-        '-c:v libx264',
-        '-c:a aac',
+        '-map 1:a:0?',
         '-pix_fmt yuv420p',
         '-movflags +faststart',
-        '-fflags +genpts',
-        '-avoid_negative_ts', 'make_zero',
-        `-t ${finalDuration}`,
-        '-shortest'
+        `-t ${audioDuration}`
+        // remove -t if you use -shortest
+      //  '-shortest'
       ])
+      .on('start', commandLine => {
+        console.log('🎯 Running ffmpeg command:', commandLine);
+      })
       .on('end', () => {
-        logger.info(`✅ Video with overlayed audio saved to ${outputPath}`);
-        resolve(outputPath);
+        console.log(`✅ Video with overlayed audio saved to ${finalOutput}`);
+        resolve(finalOutput);
       })
       .on('error', (err) => {
-        logger.error(`❌ FFmpeg error for overlayAudioOnVideo:`, err.message);
+        console.error('❌ FFmpeg error:', err.message);
         reject(err);
       })
-      .save(outputPath); // start the process last
+      .save(finalOutput);
   });
 }
+
+
+
+
+
+
+
+
 
 
 
